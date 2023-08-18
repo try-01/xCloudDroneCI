@@ -25,7 +25,7 @@ pipeline:
                   timeout: ""
                   type: Run
           platform:
-            arch: Amd64
+            arch: Arm64
             os: Linux
           runtime:
             spec: {}
