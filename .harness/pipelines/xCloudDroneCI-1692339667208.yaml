@@ -1,0 +1,33 @@
+pipeline:
+  identifier: Build_xCloudDroneCI_1692339735654
+  name: Build xCloudDroneCI
+  orgIdentifier: default
+  projectIdentifier: Cl
+  properties:
+    ci:
+      codebase:
+        build: <+input>
+        connectorRef: account.Github_OAuth_1692338473317
+        repoName: try-01/xCloudDroneCI
+  stages:
+    - stage:
+        identifier: build
+        name: build
+        spec:
+          cloneCodebase: true
+          execution:
+            steps:
+              - step:
+                  identifier: echo
+                  name: echo
+                  spec:
+                    command: echo hello world
+                  timeout: ""
+                  type: Run
+          platform:
+            arch: Amd64
+            os: Linux
+          runtime:
+            spec: {}
+            type: Cloud
+        type: CI
