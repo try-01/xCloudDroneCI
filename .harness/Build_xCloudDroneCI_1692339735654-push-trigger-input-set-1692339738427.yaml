@@ -1,0 +1,14 @@
+inputSet:
+  name: Build_xCloudDroneCI_1692339735654-push-trigger-input-set
+  identifier: Build_xCloudDroneCI_1692339735654pushtriggerinputset
+  orgIdentifier: default
+  projectIdentifier: Cl
+  pipeline:
+    identifier: Build_xCloudDroneCI_1692339735654
+    properties:
+      ci:
+        codebase:
+          build:
+            type: branch
+            spec:
+              branch: <+trigger.branch>
