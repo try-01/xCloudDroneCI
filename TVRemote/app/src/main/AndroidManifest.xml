@@ -18,7 +18,6 @@
         android:usesCleartextTraffic="true"
         android:networkSecurityConfig="@xml/network_security_config"
         android:extractNativeLibs="false"
-        android:appCategory="remote_control"
         android:hardwareAccelerated="true">
 
         <activity
