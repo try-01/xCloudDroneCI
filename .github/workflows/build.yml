@@ -31,6 +31,7 @@ jobs:
       # 4. Memberikan akses eksekusi dan menjalankan build.sh
       - name: Build with build.sh
         run: |
+          cd TVRemote
           chmod +x build.sh
           ./build.sh
 
@@ -39,5 +40,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: app-debug-apk
-          path: app/build/outputs/apk/debug/app-debug.apk
+          path: TVRemote/app/build/outputs/apk/debug/app-debug.apk
           
