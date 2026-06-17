@@ -194,19 +194,52 @@ class MainActivity : AppCompatActivity() {
             tvController.loadConfig()
             tvController.connect()
         }
+
+        // --- Power control ---
+
+        @JavascriptInterface
+        fun disconnectTv() {
+            tvController.disconnect()
+        }
+
+        @JavascriptInterface
+        fun toggleConnection(): Boolean {
+            return tvController.toggleConnection()
+        }
+
+        @JavascriptInterface
+        fun getTvInfo(): String {
+            return tvController.getTvInfo()
+        }
+
+        @JavascriptInterface
+        fun exitApp() {
+            Log.d(TAG, "Exit requested from JS")
+            tvController.disconnect()
+            scope.cancel()
+            runOnUiThread {
+                finishAffinity()
+                android.os.Process.killProcess(android.os.Process.myPid())
+            }
+        }
     }
 
     override fun onDestroy() {
         super.onDestroy()
+        tvController.disconnect()
         scope.cancel()
-        tvController.destroy()
+        webView.destroy()
     }
 
     override fun onBackPressed() {
         if (webView.canGoBack()) {
             webView.goBack()
         } else {
-            super.onBackPressed()
+            // Show exit confirmation instead of just finishing
+            scope.launch {
+                val js = "document.getElementById('exitModal').classList.add('show');"
+                webView.evaluateJavascript(js, null)
+            }
         }
     }
 }

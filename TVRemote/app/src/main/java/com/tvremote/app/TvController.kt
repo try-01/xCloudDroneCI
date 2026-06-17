@@ -396,13 +396,47 @@ class TvController(private val context: Context) {
         }
     }
 
-    // --- Cleanup ---
+    // --- Disconnect / Toggle ---
 
-    fun destroy() {
+    fun disconnect() {
+        Log.d(TAG, "Disconnecting from TV")
         keepAliveFuture?.cancel(false)
         heldTimers.values.forEach { it.cancel(false) }
         heldTimers.clear()
+        reconnectDelay = 5000L
+        val c = wsClient
+        wsClient = null
+        connected = false
+        connecting = false
+        c?.close()
+        statusCallback?.invoke(false)
+    }
+
+    fun toggleConnection(): Boolean {
+        if (connected) {
+            disconnect()
+        } else {
+            connect()
+        }
+        return connected
+    }
+
+    fun getTvInfo(): String {
+        val t = token
+        return if (tvIp.isNotEmpty()) "$tvIp|$tvMac|${if (t.isNotEmpty()) t.substring(0, minOf(8, t.length)) + "..." else "(none)"}" else ""
+    }
+
+    // --- Cleanup ---
+
+    fun destroy() {
+        Log.d(TAG, "Destroying TvController")
+        keepAliveFuture?.cancel(false)
+        heldTimers.values.forEach { it.cancel(false) }
+        heldTimers.clear()
+        connected = false
+        connecting = false
         wsClient?.close()
+        wsClient = null
         scheduler.shutdownNow()
     }
 }
