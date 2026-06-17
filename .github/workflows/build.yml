@@ -31,7 +31,6 @@ jobs:
       # 4. Memberikan akses eksekusi dan menjalankan build.sh
       - name: Build with build.sh
         run: |
-          cd TVRemote
           chmod +x build.sh
           ./build.sh
 
