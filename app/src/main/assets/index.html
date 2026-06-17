@@ -1,0 +1,541 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#0b0f14">
+<meta name="apple-mobile-web-app-title" content="Remote">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="manifest" href="/manifest.webmanifest">
+<title>TV Remote</title>
+<style>
+  :root {
+    --bg-deep: #0b0f14; --panel: #12181f; --panel-raised: #1a222b;
+    --key: #1d2630; --key-hi: #283443;
+    --accent: #3dd6e0; --accent-dim: #1e6b71; --accent-glow: rgba(61, 214, 224, 0.35);
+    --power-red: #e0473d; --text: #e8eef2; --text-dim: #6b7a87;
+    --serif: 'Iowan Old Style', 'Palatino Linotype', Georgia, serif;
+    --ui-scale: 1;
+    --ui-space: 0px;
+  }
+
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
+
+  html, body {
+    margin: 0; height: 100vh; height: 100dvh; overflow: hidden; 
+    background: radial-gradient(ellipse 120% 80% at 50% -10%, #16202b 0%, var(--bg-deep) 55%, #07090c 100%);
+    color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    display: flex; flex-direction: column; align-items: center;
+    padding: var(--ui-space) 0 0 0; 
+    user-select: none; -webkit-user-select: none;
+    transition: padding 0.1s;
+  }
+
+  .device { 
+    width: 100%; max-width: 380px; 
+    flex: 1; display: flex; flex-direction: column; overflow: hidden;
+    zoom: var(--ui-scale); -moz-transform: scale(var(--ui-scale)); -moz-transform-origin: top center;
+  }
+
+  .brand-row { display: flex; align-items: baseline; justify-content: space-between; padding: 5px 20px 10px; flex-shrink: 0; }
+  .brand { font-family: var(--serif); font-size: 13px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--text-dim); }
+  
+  .status-wrap { display: flex; align-items: center; gap: 14px; }
+  .status-dot { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--text-dim); letter-spacing: 0.05em; }
+  .status-dot::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--power-red); box-shadow: 0 0 8px rgba(224,71,61,0.4); transition: all 0.3s; }
+  .status-dot.on::before { background: var(--accent); box-shadow: 0 0 8px var(--accent-glow); }
+  
+  .icon-btn { background: none; border: none; color: var(--text-dim); padding: 0; cursor: pointer; display: flex; align-items: center; transition: color 0.2s; }
+  .icon-btn:active { color: var(--text); }
+
+  .panel {
+    background: linear-gradient(165deg, var(--panel-raised), var(--panel) 60%);
+    border-radius: 36px 36px 0 0; padding: 24px 0 calc(20px + env(safe-area-inset-bottom)); 
+    flex: 1; display: flex; flex-direction: column; overflow: hidden;
+    box-shadow: 0 1px 0 rgba(255,255,255,0.04) inset, 0 -1px 0 rgba(0,0,0,0.4) inset, 0 -15px 50px rgba(0,0,0,0.6);
+    border: 1px solid rgba(255,255,255,0.03); border-bottom: none;
+  }
+
+  .slider-dots { display: flex; justify-content: center; gap: 8px; margin: 20px 0 12px; flex-shrink: 0; }
+  .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--text-dim); opacity: 0.4; transition: all 0.3s; }
+  .dot.active { opacity: 1; background: var(--accent); box-shadow: 0 0 8px var(--accent-glow); transform: scale(1.3); }
+
+  .slider { display: flex; flex: 1; overflow-x: auto; overflow-y: hidden; scroll-snap-type: x mandatory; scrollbar-width: none; -ms-overflow-style: none; }
+  .slider::-webkit-scrollbar { display: none; }
+  
+  .slide { 
+    flex: 0 0 100%; width: 100%; scroll-snap-align: center; 
+    overflow-y: auto; overflow-x: hidden; padding: 0 20px 20px; 
+    scrollbar-width: none; 
+  }
+  .slide::-webkit-scrollbar { display: none; }
+
+  .key {
+    appearance: none; border: none; background: linear-gradient(160deg, var(--key-hi), var(--key));
+    color: var(--text); border-radius: 16px; display: flex; align-items: center; justify-content: center;
+    cursor: pointer; position: relative; box-shadow: 0 1px 0 rgba(255,255,255,0.06) inset, 0 1px 2px rgba(0,0,0,0.5), 0 4px 8px rgba(0,0,0,0.25);
+    transition: transform 0.08s ease, box-shadow 0.08s ease, background 0.15s ease;
+  }
+  .key.lit { background: linear-gradient(160deg, var(--accent-dim), #134347); box-shadow: 0 0 0 1px var(--accent-dim), 0 0 18px var(--accent-glow), 0 1px 2px rgba(0,0,0,0.5); }
+  .key svg { width: 20px; height: 20px; stroke: currentColor; fill: none; pointer-events: none; }
+  .key .label { font-size: 10px; letter-spacing: 0.04em; pointer-events: none; }
+
+  .top-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; padding: 0 20px; flex-shrink: 0; }
+  .key-power { height: 56px; color: var(--power-red); background: linear-gradient(160deg, #2a1a18, #1d1313); box-shadow: 0 1px 0 rgba(255,255,255,0.05) inset, 0 0 0 1px rgba(224,71,61,0.18), 0 1px 2px rgba(0,0,0,0.5); }
+  .key-power.lit { box-shadow: 0 0 0 1px rgba(224,71,61,0.4), 0 0 18px rgba(224,71,61,0.3); }
+  .key-top { height: 56px; flex-direction: column; gap: 4px; }
+
+  .rocker-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 10px; }
+  .rocker { background: linear-gradient(160deg, var(--key-hi), var(--key)); border-radius: 18px; overflow: hidden; box-shadow: 0 1px 0 rgba(255,255,255,0.06) inset, 0 4px 10px rgba(0,0,0,0.3); }
+  .rocker .key { width: 100%; height: 56px; border-radius: 0; background: none; box-shadow: none; flex-direction: column; gap: 2px; }
+  .rocker .key.lit { background: rgba(61,214,224,0.12); }
+  .rocker .key:first-child { border-bottom: 1px solid rgba(0,0,0,0.35); }
+  .rocker .tag { text-align: center; font-size: 9px; letter-spacing: 0.1em; color: var(--text-dim); padding: 6px 0 4px; text-transform: uppercase; }
+
+  .dpad-wrap { display: flex; justify-content: center; margin: 26px 0 20px; }
+  .dpad { position: relative; width: 196px; height: 196px; border-radius: 50%; background: radial-gradient(circle at 50% 42%, var(--key-hi), var(--key) 70%); box-shadow: 0 1px 0 rgba(255,255,255,0.06) inset, 0 8px 20px rgba(0,0,0,0.4), 0 0 0 6px var(--panel); }
+  .dpad .key { position: absolute; width: 66px; height: 66px; background: none; box-shadow: none; border-radius: 0; }
+  .dpad .key.lit { background: rgba(61,214,224,0.1); }
+  .dpad .key-up { top: 0; left: 65px; border-radius: 50% 50% 0 0; }
+  .dpad .key-down { bottom: 0; left: 65px; border-radius: 0 0 50% 50%; }
+  .dpad .key-left { left: 0; top: 65px; border-radius: 50% 0 0 50%; }
+  .dpad .key-right { right: 0; top: 65px; border-radius: 0 50% 50% 0; }
+  .dpad .key-ok { top: 50%; left: 50%; width: 78px; height: 78px; transform: translate(-50%, -50%); border-radius: 50%; background: linear-gradient(160deg, var(--accent-dim), #103538); box-shadow: 0 0 0 1px var(--accent-dim), 0 2px 10px rgba(0,0,0,0.45), 0 0 22px var(--accent-glow); color: var(--accent); font-size: 13px; letter-spacing: 0.08em; z-index: 2; font-weight: bold; }
+  .dpad .key-ok.lit { transform: translate(-50%, -50%) scale(0.95); }
+
+  .func-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+  .key-func { height: 56px; flex-direction: column; gap: 4px; color: var(--text-dim); }
+
+  .media-row { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin-top: 26px; }
+  .key-media { height: 50px; color: var(--accent); }
+  .key-media svg { width: 18px; height: 18px; }
+
+  .section-title { font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--text-dim); margin: 10px 4px 12px; display: flex; justify-content: space-between; }
+  .section-title.mt { margin-top: 28px; }
+  .numpad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+  .key-num { height: 50px; font-size: 16px; font-family: var(--serif); }
+
+  .text-input-row { display: flex; gap: 8px; }
+  .text-input { flex: 1; height: 50px; border-radius: 14px; border: 1px solid rgba(255,255,255,0.08); background: var(--key); color: var(--text); padding: 0 14px; font-size: 14px; outline: none; }
+  .text-input:focus { border-color: var(--accent-dim); box-shadow: 0 0 0 2px var(--accent-glow); }
+  .text-input::placeholder { color: var(--text-dim); }
+  .send-btn { width: 50px; height: 50px; flex-shrink: 0; color: var(--accent); }
+  .text-hint { font-size: 10px; color: var(--text-dim); margin: 10px 4px 0; line-height: 1.4; }
+
+  .apps-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+  .app-tile { height: 64px; flex-direction: column; gap: 6px; border-radius: 14px; background: linear-gradient(160deg, var(--key-hi), var(--key)); font-size: 8.5px; letter-spacing: 0.02em; color: var(--text-dim); text-align: center; padding: 6px 4px; }
+  .app-tile .logo { width: 26px; height: 26px; border-radius: 7px; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; font-family: var(--serif); color: #fff; }
+  .app-tile .label { color: var(--text-dim); line-height: 1.15; }
+
+  .modal-overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 999;
+    display: flex; align-items: center; justify-content: center;
+    opacity: 0; pointer-events: none; transition: opacity 0.2s ease;
+    backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px);
+  }
+  .modal-overlay.show { opacity: 1; pointer-events: auto; }
+  .modal-card {
+    background: linear-gradient(165deg, var(--panel-raised), var(--panel));
+    border-radius: 20px; padding: 22px; width: 85%; max-width: 300px;
+    border: 1px solid rgba(255,255,255,0.06); box-shadow: 0 20px 40px rgba(0,0,0,0.6);
+    transform: translateY(20px) scale(0.95); transition: all 0.2s ease;
+  }
+  .modal-overlay.show .modal-card { transform: translateY(0) scale(1); }
+  .modal-title { margin: 0 0 20px; font-size: 14px; font-weight: 600; text-align: center; letter-spacing: 0.05em; color: var(--text); }
+  
+  .setting-group { margin-bottom: 20px; }
+  .setting-group label { display: flex; justify-content: space-between; font-size: 11px; color: var(--text-dim); margin-bottom: 10px; font-weight: 500; }
+  .setting-group input[type="range"] { width: 100%; margin: 0; accent-color: var(--accent); }
+  
+  .btn-close-modal {
+    width: 100%; height: 46px; border-radius: 12px; margin-top: 8px;
+    background: rgba(61,214,224,0.1); color: var(--accent); border: 1px solid rgba(61,214,224,0.2); 
+    font-size: 13px; font-weight: 600; cursor: pointer; transition: background 0.2s;
+  }
+  .btn-close-modal:active { background: rgba(61,214,224,0.2); }
+
+  .toast {
+    position: fixed; top: 20px; left: 50%; transform: translateX(-50%) translateY(-15px);
+    background: var(--panel-raised); border: 1px solid rgba(255,255,255,0.06); color: var(--text);
+    font-size: 12px; padding: 10px 20px; border-radius: 100px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.5); opacity: 0; pointer-events: none; transition: opacity 0.2s ease, transform 0.2s ease;
+    letter-spacing: 0.02em; white-space: nowrap; z-index: 100;
+  }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+  .toast .dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; margin-right: 8px; vertical-align: middle; }
+  .toast.ok .dot { background: var(--accent); box-shadow: 0 0 8px var(--accent-glow); }
+  .toast.fail .dot { background: var(--power-red); box-shadow: 0 0 8px rgba(224,71,61,0.4); }
+
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } .slider { scroll-behavior: auto; } }
+</style>
+</head>
+<body>
+
+<div class="device">
+  <div class="brand-row">
+    <span class="brand">Remote</span>
+    <div class="status-wrap">
+      <span class="status-dot" id="statusDot">Menghubungkan…</span>
+      <button id="settingsBtn" class="icon-btn" title="Pengaturan Tampilan">
+        <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="3"></circle>
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+        </svg>
+      </button>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="top-row">
+      <button class="key key-power" data-key="KEY_POWER" title="Power">
+        <svg viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round"><path d="M12 2v8"/><path d="M18.4 6.6a9 9 0 1 1-12.8 0"/></svg>
+      </button>
+      <button class="key key-top" data-key="KEY_SOURCE">
+        <svg viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="13" rx="2"/><path d="M8 21h8"/><path d="M3 10h18"/></svg>
+        <span class="label">Source</span>
+      </button>
+      <button class="key key-top" data-key="KEY_MENU">
+        <svg viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round"><path d="M4 6h16"/><path d="M4 12h16"/><path d="M4 18h16"/></svg>
+        <span class="label">Menu</span>
+      </button>
+    </div>
+
+    <div class="slider-dots">
+      <div class="dot active"></div><div class="dot"></div><div class="dot"></div>
+    </div>
+
+    <div class="slider" id="slider">
+      <!-- Hal 1 -->
+      <div class="slide">
+        <div class="rocker-row">
+          <div class="rocker">
+            <button class="key" data-key="KEY_VOLUP" data-hold="true"><svg viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9v6h4l5 5V4L7 9H3z"/><path d="M16 8a5 5 0 0 1 0 8"/><path d="M19 5a9 9 0 0 1 0 14"/></svg></button>
+            <button class="key" data-key="KEY_VOLDOWN" data-hold="true"><svg viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9v6h4l5 5V4L7 9H3z"/><path d="M17 9l4 6"/><path d="M21 9l-4 6"/></svg></button>
+            <div class="tag">Volume</div>
+          </div>
+          <div class="rocker">
+            <button class="key" data-key="KEY_CHUP" data-hold="true"><svg viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 15l5-6 5 6"/></svg></button>
+            <button class="key" data-key="KEY_CHDOWN" data-hold="true"><svg viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 9l5 6 5-6"/></svg></button>
+            <div class="tag">Channel</div>
+          </div>
+        </div>
+
+        <div class="dpad-wrap">
+          <div class="dpad">
+            <button class="key key-up" data-key="KEY_UP" data-hold="true"><svg viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V6"/><path d="M6 11l6-6 6 6"/></svg></button>
+            <button class="key key-down" data-key="KEY_DOWN" data-hold="true"><svg viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v13"/><path d="M18 13l-6 6-6-6"/></svg></button>
+            <button class="key key-left" data-key="KEY_LEFT" data-hold="true"><svg viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H6"/><path d="M11 18l-6-6 6-6"/></svg></button>
+            <button class="key key-right" data-key="KEY_RIGHT" data-hold="true"><svg viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h13"/><path d="M13 6l6 6-6 6"/></svg></button>
+            <button class="key key-ok" data-key="KEY_ENTER">OK</button>
+          </div>
+        </div>
+
+        <div class="func-row">
+          <button class="key key-func" data-key="KEY_RETURN"><svg viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14L4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-1"/></svg><span class="label">Back</span></button>
+          <button class="key key-func" data-key="KEY_HOME"><svg viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l9-7 9 7"/><path d="M5 10v9h14v-9"/></svg><span class="label">Home</span></button>
+          <button class="key key-func" data-key="KEY_MUTE"><svg viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5L6 9H3v6h3l5 4V5z"/><path d="M16 9l5 6"/><path d="M21 9l-5 6"/></svg><span class="label">Mute</span></button>
+          <button class="key key-func" data-key="KEY_EXIT"><svg viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg><span class="label">Exit</span></button>
+        </div>
+
+        <div class="media-row">
+          <button class="key key-media" data-key="KEY_REWIND" data-hold="repeat"><svg viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 19 2 12 11 5 11 19"/><polygon points="22 19 13 12 22 5 22 19"/></svg></button>
+          <button class="key key-media" data-key="KEY_PLAY"><svg viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="currentColor" stroke="none"><polygon points="6 4 20 12 6 20 6 4"/></svg></button>
+          <button class="key key-media" data-key="KEY_PAUSE"><svg viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg></button>
+          <button class="key key-media" data-key="KEY_FF" data-hold="repeat"><svg viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 19 22 12 13 5 13 19"/><polygon points="2 19 11 12 2 5 2 19"/></svg></button>
+          <button class="key key-media" data-key="KEY_STOP"><svg viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="5" width="14" height="14" rx="1"/></svg></button>
+        </div>
+      </div>
+
+      <!-- Hal 2 -->
+      <div class="slide">
+        <div class="section-title">Number Pad</div>
+        <div class="numpad">
+          <button class="key key-num" data-key="KEY_1">1</button><button class="key key-num" data-key="KEY_2">2</button><button class="key key-num" data-key="KEY_3">3</button>
+          <button class="key key-num" data-key="KEY_4">4</button><button class="key key-num" data-key="KEY_5">5</button><button class="key key-num" data-key="KEY_6">6</button>
+          <button class="key key-num" data-key="KEY_7">7</button><button class="key key-num" data-key="KEY_8">8</button><button class="key key-num" data-key="KEY_9">9</button>
+          <button class="key key-num" data-key="KEY_PRECH">&#x27F2;</button><button class="key key-num" data-key="KEY_0">0</button><button class="key key-num" data-key="KEY_PLUS100">100+</button>
+        </div>
+
+        <div class="section-title mt">Ketik Teks</div>
+        <div class="text-input-row">
+          <input type="text" id="textInput" class="text-input" placeholder="Ketik lalu kirim ke TV…" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+          <button class="key send-btn" id="sendTextBtn"><svg viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2L11 13"/><path d="M22 2L15 22l-4-9-9-4 20-7z"/></svg></button>
+        </div>
+        <p class="text-hint">Teks akan dikirim otomatis ke TV (termasuk pencarian global).</p>
+      </div>
+
+      <!-- Hal 3 -->
+      <div class="slide">
+        <div class="section-title">Apps (Aplikasi)</div>
+        <div class="apps-grid" id="appsGrid"></div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- Modal Pengaturan -->
+<div class="modal-overlay" id="settingsModal">
+  <div class="modal-card">
+    <h3 class="modal-title">Pengaturan Tampilan</h3>
+    
+    <div class="setting-group">
+      <label><span>Skala (Zoom)</span> <strong id="scaleVal" style="color:var(--accent)">100%</strong></label>
+      <input type="range" id="scaleSlider" min="0.8" max="1.25" step="0.01" value="1">
+    </div>
+    
+    <div class="setting-group">
+      <label><span>Jarak Layar Atas</span> <strong id="spaceVal" style="color:var(--accent)">0px</strong></label>
+      <input type="range" id="spaceSlider" min="0" max="60" step="2" value="0">
+    </div>
+
+    <button class="btn-close-modal" id="closeSettings">Simpan &amp; Tutup</button>
+  </div>
+</div>
+
+<div class="toast" id="toast"><span class="dot"></span><span id="toastText"></span></div>
+
+<script>
+  // --- Native Bridge Detection ---
+  // When running inside Android WebView, window.Android is injected.
+  // When running in a browser for testing, we provide a no-op fallback.
+  const IS_ANDROID = typeof window.Android !== 'undefined';
+  const A = window.Android || null;
+
+  // Bridge wrappers: return Promises to keep existing async code patterns
+  const bridge = {
+    sendKey:   (key)        => Promise.resolve(A ? A.sendKey(key) : false),
+    pressKey:  (key)        => Promise.resolve(A ? A.pressKey(key) : false),
+    holdKey:   (key)        => { if (A) A.holdKey(key); return Promise.resolve(); },
+    releaseKey:(key)        => Promise.resolve(A ? A.releaseKey(key) : false),
+    sendText:  (text)       => Promise.resolve(A ? A.sendText(text) : false),
+    launchApp: (appId)      => Promise.resolve(A ? A.launchApp(appId) : false),
+    isConnected:()          => Promise.resolve(A ? A.isConnected() : false),
+    getPowerState:()        => Promise.resolve(A ? A.getPowerState() : 'off'),
+    sendWoL:  ()            => { if (A) A.sendWoL(); return Promise.resolve(); },
+    vibrate:  (ms)          => { if (A) A.vibrate(ms); },
+    reconnect:()            => { if (A) A.reconnect(); },
+  };
+
+  // --- Settings ---
+  const root = document.documentElement;
+  const settingsModal = document.getElementById('settingsModal');
+  const scaleSlider = document.getElementById('scaleSlider');
+  const spaceSlider = document.getElementById('spaceSlider');
+  const scaleVal = document.getElementById('scaleVal');
+  const spaceVal = document.getElementById('spaceVal');
+
+  const savedScale = localStorage.getItem('remoteScale3') || '1';
+  const savedSpace = localStorage.getItem('remoteSpace3') || '0';
+
+  function updateScale(val) { root.style.setProperty('--ui-scale', val); scaleVal.textContent = Math.round(val * 100) + '%'; }
+  function updateSpace(val) { root.style.setProperty('--ui-space', val + 'px'); spaceVal.textContent = val + 'px'; }
+
+  scaleSlider.value = savedScale; updateScale(savedScale);
+  spaceSlider.value = savedSpace; updateSpace(savedSpace);
+
+  document.getElementById('settingsBtn').addEventListener('click', () => settingsModal.classList.add('show'));
+  document.getElementById('closeSettings').addEventListener('click', () => settingsModal.classList.remove('show'));
+  settingsModal.addEventListener('click', (e) => { if (e.target === settingsModal) settingsModal.classList.remove('show'); });
+  
+  scaleSlider.addEventListener('input', (e) => { updateScale(e.target.value); localStorage.setItem('remoteScale3', e.target.value); });
+  spaceSlider.addEventListener('input', (e) => { updateSpace(e.target.value); localStorage.setItem('remoteSpace3', e.target.value); });
+
+  // --- Slider Dots ---
+  const slider = document.getElementById('slider');
+  const dots = document.querySelectorAll('.dot');
+  slider.addEventListener('scroll', () => {
+    const index = Math.round(slider.scrollLeft / slider.clientWidth);
+    dots.forEach((dot, i) => dot.classList.toggle('active', i === index));
+  });
+
+  // --- Apps Data ---
+  const APPS = [
+    { name: 'Netflix',     id: '11101200001',      bg: '#831010', mono: 'N' },
+    { name: 'YouTube',     id: '111299001912',     bg: '#7a1414', mono: '\u25B6' },
+    { name: 'Prime Video', id: '3201512006785',    bg: '#16415c', mono: 'P' },
+    { name: 'Disney+',     id: '3201901017640',    bg: '#0c2a4d', mono: 'D+' },
+    { name: 'Spotify',     id: '3201606009684',    bg: '#0f5c34', mono: 'S' },
+    { name: 'Internet',    id: 'org.tizen.browser',bg: '#2b4a6b', mono: '\u25CE' },
+    { name: 'SmartThings', id: '3201710015016',    bg: '#1d4a7a', mono: '\u2302' },
+    { name: 'BBC iPlayer', id: '3201601007670',    bg: '#3a1f1f', mono: 'iP' },
+  ];
+
+  const appsGrid = document.getElementById('appsGrid');
+  APPS.forEach(app => {
+    const btn = document.createElement('button');
+    btn.className = 'key app-tile';
+    btn.dataset.app = app.id;
+    btn.innerHTML = '<span class="logo" style="background:'+app.bg+'">'+app.mono+'</span><span class="label">'+app.name+'</span>';
+    appsGrid.appendChild(btn);
+  });
+
+  // --- Toast ---
+  const toast = document.getElementById('toast');
+  const toastText = document.getElementById('toastText');
+  let toastTimer;
+  function showToast(text, ok) {
+    clearTimeout(toastTimer);
+    toast.className = 'toast show ' + (ok ? 'ok' : 'fail');
+    toastText.textContent = text;
+    toastTimer = setTimeout(() => toast.classList.remove('show'), 1500);
+  }
+
+  function buzz(ms) { bridge.vibrate(ms); }
+
+  // --- Event Binding ---
+  function bindTap(el, fn) {
+    const MOVE = 12;
+    let sx = 0, sy = 0, moved = false;
+    el.addEventListener('pointerdown', (e) => {
+      if (e.pointerType === 'mouse' && e.button !== 0) return;
+      sx = e.clientX; sy = e.clientY; moved = false;
+      el.classList.add('lit');
+      try { el.setPointerCapture(e.pointerId); } catch {}
+      buzz(15); fn();
+    });
+    el.addEventListener('pointermove', (e) => {
+      if (Math.abs(e.clientX - sx) > MOVE || Math.abs(e.clientY - sy) > MOVE) {
+        if (!moved) { moved = true; el.classList.remove('lit'); }
+      }
+    });
+    el.addEventListener('pointerup', () => el.classList.remove('lit'));
+    el.addEventListener('pointercancel', () => el.classList.remove('lit'));
+  }
+
+  function bindHold(el, key) {
+    let active = false, ping = null;
+    const PING_MS = 2000;
+    const down = (e) => {
+      if (e.pointerType === 'mouse' && e.button !== 0) return;
+      if (active) return;
+      active = true; el.classList.add('lit');
+      try { el.setPointerCapture(e.pointerId); } catch {}
+      buzz(15);
+      bridge.pressKey(key).then(ok => {
+        if (!active) return;
+        if (!ok) { showToast('TV tidak terhubung', false); release(); return; }
+        ping = setInterval(() => bridge.holdKey(key), PING_MS);
+      });
+    };
+    const release = () => {
+      if (!active) return;
+      active = false; clearInterval(ping); el.classList.remove('lit');
+      bridge.releaseKey(key);
+    };
+    el.addEventListener('pointerdown', down);
+    el.addEventListener('pointerup', release);
+    el.addEventListener('pointercancel', release);
+    el.addEventListener('lostpointercapture', release);
+  }
+
+  function bindHoldRepeat(el, key, intervalMs) {
+    intervalMs = intervalMs || 350;
+    let active = false, interval = null;
+    const down = (e) => {
+      if (e.pointerType === 'mouse' && e.button !== 0) return;
+      if (active) return;
+      active = true; el.classList.add('lit');
+      try { el.setPointerCapture(e.pointerId); } catch {}
+      buzz(15); sendKey(key);
+      interval = setInterval(() => {
+        el.classList.add('lit'); sendKey(key);
+        setTimeout(() => { if (active) el.classList.remove('lit'); }, 100);
+      }, intervalMs);
+    };
+    const release = () => {
+      if (!active) return;
+      active = false; clearInterval(interval); el.classList.remove('lit');
+    };
+    el.addEventListener('pointerdown', down);
+    el.addEventListener('pointerup', release);
+    el.addEventListener('pointercancel', release);
+    el.addEventListener('lostpointercapture', release);
+  }
+
+  async function sendKey(key) {
+    try {
+      const ok = await bridge.sendKey(key);
+      return { ok: ok, key: key };
+    } catch(e) { return { ok: false, key: key }; }
+  }
+
+  async function launchApp(appId, name) {
+    try {
+      const ok = await bridge.launchApp(appId);
+      showToast(ok ? 'Membuka ' + name : name + ' gagal', ok);
+    } catch(e) { showToast('Gagal', false); }
+  }
+
+  async function sendTextToTV(text) {
+    if (!text) return;
+    try {
+      const ok = await bridge.sendText(text);
+      showToast(ok ? 'Teks terkirim' : 'Gagal kirim teks', ok);
+    } catch(e) { showToast('Gagal kirim teks', false); }
+  }
+
+  const textInput = document.getElementById('textInput');
+  const sendTextBtn = document.getElementById('sendTextBtn');
+
+  function submitTextInput() {
+    const text = textInput.value;
+    if (!text) return;
+    sendTextToTV(text); textInput.value = ''; textInput.blur();
+  }
+
+  bindTap(sendTextBtn, submitTextInput);
+  textInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); submitTextInput(); } });
+
+  document.querySelectorAll('[data-key]').forEach(btn => {
+    const key = btn.dataset.key;
+    const holdMode = btn.dataset.hold;
+    if (holdMode === 'true') { bindHold(btn, key); } 
+    else if (holdMode === 'repeat') { bindHoldRepeat(btn, key, 200); } 
+    else { 
+      bindTap(btn, () => { 
+        sendKey(key).then(({ ok, key: k }) => {
+          if (k === 'WOL') {
+            showToast('Menghidupkan TV (WoL)...', true);
+            document.getElementById('statusDot').textContent = 'Waking up...';
+            document.getElementById('statusDot').classList.remove('on');
+          } else {
+            showToast(ok ? k : k + ' gagal', ok);
+          }
+        }); 
+      }); 
+    }
+  });
+
+  document.querySelectorAll('[data-app]').forEach(btn => {
+    bindTap(btn, () => { launchApp(btn.dataset.app, btn.querySelector('.label').textContent); });
+  });
+
+  // --- Status (called from native Android) ---
+  const statusDot = document.getElementById('statusDot');
+  function onNativeStatus(connected) {
+    statusDot.classList.toggle('on', connected);
+    statusDot.textContent = connected ? 'Ready' : 'Menghubungkan\u2026';
+  }
+
+  // Fallback: if not in Android, poll via fetch (for browser testing)
+  if (!IS_ANDROID) {
+    async function checkStatus() {
+      try {
+        const res = await fetch('/api/status');
+        const data = await res.json();
+        onNativeStatus(data.connected);
+      } catch {
+        statusDot.classList.remove('on');
+        statusDot.textContent = 'Offline';
+      }
+    }
+    checkStatus(); setInterval(checkStatus, 3000);
+  }
+</script>
+</body>
+</html>
