@@ -15,6 +15,7 @@ import android.webkit.WebViewClient
 import android.view.WindowManager
 import androidx.appcompat.app.AppCompatActivity
 import kotlinx.coroutines.*
+import kotlinx.coroutines.runBlocking
 
 class MainActivity : AppCompatActivity() {
 
@@ -51,7 +52,10 @@ class MainActivity : AppCompatActivity() {
             webViewClient = object : WebViewClient() {
                 override fun onPageFinished(view: WebView?, url: String?) {
                     super.onPageFinished(view, url)
-                    checkTvAndConnect()
+                    // If already configured, connect automatically
+                    if (tvController.tvIp.isNotEmpty()) {
+                        tvController.connect()
+                    }
                 }
             }
 
@@ -66,30 +70,6 @@ class MainActivity : AppCompatActivity() {
                 val js = "if(typeof onNativeStatus==='function') onNativeStatus($connected);"
                 webView.evaluateJavascript(js, null)
             }
-        }
-    }
-
-    private fun checkTvAndConnect() {
-        scope.launch(Dispatchers.IO) {
-            // If no TV IP saved, scan network
-            if (tvController.tvIp.isEmpty()) {
-                Log.d(TAG, "No saved TV IP, scanning network...")
-                val result = NetworkScanner.scan()
-                if (result != null) {
-                    tvController.saveConfig(result.ip, result.mac)
-                    Log.d(TAG, "TV discovered: ${result.ip}")
-                } else {
-                    Log.w(TAG, "Scan failed, TV not found")
-                    notifyJs("showToast('TV tidak ditemukan di jaringan', false)")
-                    return@launch
-                }
-            }
-
-            // Connect to TV
-            tvController.connect()
-
-            // Notify JS of initial state
-            notifyJs("if(typeof onNativeStatus==='function') onNativeStatus(false)")
         }
     }
 
@@ -179,6 +159,40 @@ class MainActivity : AppCompatActivity() {
         @JavascriptInterface
         fun log(message: String) {
             Log.d(TAG, "JS: $message")
+        }
+
+        // --- Setup flow methods ---
+
+        @JavascriptInterface
+        fun isConfigured(): Boolean {
+            return tvController.tvIp.isNotEmpty()
+        }
+
+        @JavascriptInterface
+        fun startScan(): String {
+            // Run scan synchronously (called from background thread by JS bridge)
+            val result = runBlocking {
+                NetworkScanner.scan(applicationContext)
+            }
+            return if (result != null) "${result.ip}|${result.mac}" else ""
+        }
+
+        @JavascriptInterface
+        fun saveConfig(ip: String, mac: String) {
+            tvController.saveConfig(ip, mac)
+        }
+
+        @JavascriptInterface
+        fun connectToTv(): Boolean {
+            tvController.connect()
+            return true
+        }
+
+        @JavascriptInterface
+        fun forceReconnect() {
+            tvController.destroy()
+            tvController.loadConfig()
+            tvController.connect()
         }
     }
 
