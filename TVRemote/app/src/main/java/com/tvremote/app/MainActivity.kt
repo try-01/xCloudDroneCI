@@ -81,13 +81,6 @@ class MainActivity : AppCompatActivity() {
                 wasConnected = connected
             }
         }
-
-        // Disconnect callback: show reset dialog
-        tvController.setDisconnectCallback {
-            scope.launch {
-                showDisconnectDialog()
-            }
-        }
     }
 
     /**
