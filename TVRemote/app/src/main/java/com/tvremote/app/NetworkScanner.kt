@@ -6,7 +6,6 @@ import android.util.Log
 import kotlinx.coroutines.*
 import java.net.HttpURLConnection
 import java.net.Inet4Address
-import java.net.InetAddress
 import java.net.NetworkInterface
 import java.net.URL
 import org.json.JSONObject
@@ -15,32 +14,55 @@ object NetworkScanner {
 
     private const val TAG = "NetworkScanner"
     private const val SCAN_TIMEOUT_MS = 250
-    private const val MAX_CONCURRENT = 60
+    private const val MAX_CONCURRENT = 25 // Capped to avoid Knox/Play Protect flags
 
     data class TvInfo(val ip: String, val mac: String)
 
+    // Cancellable scan job
+    @Volatile
+    private var currentScan: Job? = null
+
+    /**
+     * Cancel any running scan.
+     */
+    fun cancelScan() {
+        currentScan?.cancel()
+        currentScan = null
+    }
+
     /**
      * Scan local network for Samsung TV using HTTP port probing on port 8001.
+     * Uses a capped worker pool (25) to avoid security flagging.
      * Returns the first TV found, or null if none found.
      */
     suspend fun scan(context: Context): TvInfo? = withContext(Dispatchers.IO) {
+        // Cancel any previous scan
+        cancelScan()
+
         val baseIP = getDeviceSubnet(context)
         if (baseIP == null) {
             Log.w(TAG, "Could not determine device subnet")
             return@withContext null
         }
 
-        Log.d(TAG, "Scanning subnet: ${baseIP}x (254 hosts, ${SCAN_TIMEOUT_MS}ms timeout)")
+        Log.d(TAG, "Scanning subnet: ${baseIP}x (254 hosts, ${SCAN_TIMEOUT_MS}ms timeout, max $MAX_CONCURRENT concurrent)")
 
         val semaphore = kotlinx.coroutines.sync.Semaphore(MAX_CONCURRENT)
         val found = java.util.concurrent.ConcurrentLinkedQueue<TvInfo>()
         val mutex = kotlinx.coroutines.sync.Mutex()
 
+        val scanJob = coroutineContext[Job]!!
+        currentScan = scanJob
+
         val jobs = (1..254).map { i ->
             async {
+                // Check if scan was cancelled
+                if (!isActive) return@async null
+
                 val ip = "$baseIP$i"
                 semaphore.acquire()
                 try {
+                    if (!isActive) return@async null
                     probeTv(ip)?.let { info ->
                         if (found.isEmpty()) {
                             mutex.lock()
@@ -58,8 +80,10 @@ object NetworkScanner {
             }
         }
 
-        // Wait for all jobs to complete
+        // Wait for all jobs or until first result
         jobs.forEach { it.join() }
+
+        currentScan = null
 
         val result = found.firstOrNull()
         if (result == null) {
@@ -148,7 +172,6 @@ object NetworkScanner {
             // Check if this looks like a Samsung TV
             val model = device.optString("model", "")
             val manufacturer = device.optString("manufacturer", "")
-            val powerState = device.optString("PowerState", "")
             val deviceId = device.optString("id", "")
 
             // Accept if we got a valid response with device info
@@ -159,12 +182,5 @@ object NetworkScanner {
         } catch (_: Exception) {
             null
         }
-    }
-
-    /**
-     * Check if a specific IP is a reachable Samsung TV.
-     */
-    suspend fun probeSingle(ip: String): TvInfo? = withContext(Dispatchers.IO) {
-        probeTv(ip)
     }
 }

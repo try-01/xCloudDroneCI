@@ -466,6 +466,7 @@
     </div>
 
     <button class="btn-close-modal" id="btnDisconnect" style="background:rgba(224,71,61,0.1); color:var(--power-red); border:1px solid rgba(224,71,61,0.2); margin-bottom:8px;">Putuskan Sambungan</button>
+    <button class="btn-close-modal" id="btnResetConfig" style="background:rgba(255,170,0,0.1); color:#ffa500; border:1px solid rgba(255,170,0,0.2); margin-bottom:8px;">Atur Ulang Konfigurasi</button>
     <button class="btn-close-modal" id="btnExitApp" style="background:rgba(224,71,61,0.15); color:var(--power-red); border:1px solid rgba(224,71,61,0.3); margin-bottom:8px;">Keluar &amp; Tutup App</button>
     <button class="btn-close-modal" id="closeSettings">Simpan &amp; Tutup</button>
   </div>
@@ -524,6 +525,7 @@
     exitApp:()              => { if (A) A.exitApp(); },
     getTvInfo:()            => Promise.resolve(A ? A.getTvInfo() : ''),
     toggleConnection:()     => Promise.resolve(A ? A.toggleConnection() : false),
+    resetConfig:()          => { if (A) A.resetConfig(); },
   };
 
   // --- Power Toggle ---
@@ -593,6 +595,23 @@
     settingsModal.classList.remove('show');
     showToast('Sambungan diputus', false);
     updatePowerToggle();
+  });
+
+  // --- Settings: Reset Configuration ---
+  document.getElementById('btnResetConfig').addEventListener('click', () => {
+    settingsModal.classList.remove('show');
+    // Show confirmation
+    const resetModal = document.getElementById('exitModal');
+    resetModal.querySelector('h3').textContent = 'Atur Ulang Konfigurasi?';
+    resetModal.querySelector('p').textContent = 'Semua data TV (IP, MAC, Token) akan dihapus. Anda harus melakukan scan atau input ulang.';
+    resetModal.querySelector('#btnExitConfirm').textContent = 'Atur Ulang';
+    resetModal.classList.add('show');
+    // Override confirm action
+    const origHandler = document.getElementById('btnExitConfirm').onclick;
+    document.getElementById('btnExitConfirm').onclick = () => {
+      buzz(15);
+      bridge.resetConfig();
+    };
   });
 
   // --- Settings: Exit App ---

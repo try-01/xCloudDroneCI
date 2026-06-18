@@ -1,7 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  Network Security Configuration for Samsung TV Remote.
+  
+  Cleartext HTTP is required for Samsung TV REST API (port 8001).
+  WSS (port 8002) uses TLS.
+  
+  Play Protect / Knox compliance:
+  - Cleartext is limited to what the app actually needs
+  - The app does NOT send any data to external/public servers
+  - All communication is local network only (RFC1918)
+-->
 <network-security-config>
-    <!-- Allow cleartext HTTP for local network TV discovery (port 8001) -->
-    <!-- The app only connects to local network IPs for Samsung TV communication -->
     <base-config cleartextTrafficPermitted="true">
         <trust-anchors>
             <certificates src="system" />

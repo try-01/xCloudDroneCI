@@ -18,6 +18,7 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledFuture
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 import javax.net.ssl.SSLContext
 import javax.net.ssl.TrustManager
 import javax.net.ssl.X509TrustManager
@@ -42,24 +43,42 @@ class TvController(private val context: Context) {
     private val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     private val scheduler = Executors.newScheduledThreadPool(4)
     private val heldTimers = ConcurrentHashMap<String, ScheduledFuture<*>>()
+    private val reconnectTimers = mutableListOf<ScheduledFuture<*>>()
+    private val reconnectMutex = Any()
 
     @Volatile var tvIp: String = ""
     @Volatile var tvMac: String = ""
-    @Volatile var connected = false
-    @Volatile var connecting = false
     @Volatile var encodedName: String = ""
+
+    // Strict state management for On/Off
+    @Volatile
+    var isServerActive: Boolean = false
+        private set
+
+    @Volatile
+    var connected: Boolean = false
+        private set
+
+    @Volatile
+    var connecting: Boolean = false
+        private set
 
     private var wsClient: WebSocketClient? = null
     private var reconnectDelay = 5000L
     private var keepAliveMisses = 0
     private var keepAliveFuture: ScheduledFuture<*>? = null
     private var statusCallback: ((Boolean) -> Unit)? = null
+    private var disconnectCallback: (() -> Unit)? = null
 
     val token: String
         get() = prefs.getString(KEY_TOKEN, "") ?: ""
 
     fun setStatusCallback(cb: (Boolean) -> Unit) {
         statusCallback = cb
+    }
+
+    fun setDisconnectCallback(cb: () -> Unit) {
+        disconnectCallback = cb
     }
 
     fun loadConfig() {
@@ -85,6 +104,17 @@ class TvController(private val context: Context) {
         }
     }
 
+    fun clearConfig() {
+        prefs.edit()
+            .remove(KEY_TV_IP)
+            .remove(KEY_TV_MAC)
+            .remove(KEY_TOKEN)
+            .apply()
+        tvIp = ""
+        tvMac = ""
+        Log.d(TAG, "Config cleared")
+    }
+
     // --- WebSocket Connection ---
 
     fun connect() {
@@ -94,6 +124,8 @@ class TvController(private val context: Context) {
             return
         }
 
+        // Mark server as active when user initiates connection
+        isServerActive = true
         connecting = true
         val url = buildUrl()
         Log.d(TAG, "Connecting to: $url")
@@ -109,7 +141,6 @@ class TvController(private val context: Context) {
             val client = object : WebSocketClient(URI(url)) {
                 override fun onOpen(handshake: ServerHandshake?) {
                     Log.d(TAG, "WebSocket opened")
-                    startReadLoop()
                 }
 
                 override fun onMessage(message: String?) {
@@ -136,10 +167,6 @@ class TvController(private val context: Context) {
         }
     }
 
-    private fun startReadLoop() {
-        // Read loop is handled by WebSocketClient's onMessage callback
-    }
-
     private fun onDisconnected() {
         val wasConnected = connected
         connected = false
@@ -148,14 +175,40 @@ class TvController(private val context: Context) {
         if (wasConnected) {
             statusCallback?.invoke(false)
         }
-        scheduleReconnect()
+        // Only auto-reconnect if server is still active (user hasn't pressed OFF)
+        if (isServerActive) {
+            scheduleReconnect()
+        } else {
+            Log.d(TAG, "Server is OFF, not reconnecting")
+        }
     }
 
     private fun scheduleReconnect() {
+        // Don't reconnect if server is inactive
+        if (!isServerActive) {
+            Log.d(TAG, "scheduleReconnect skipped: server is OFF")
+            return
+        }
+
         val delay = reconnectDelay
         reconnectDelay = (reconnectDelay * 2).coerceAtMost(MAX_RECONNECT_MS)
         Log.d(TAG, "Reconnecting in ${delay}ms")
-        scheduler.schedule({ connect() }, delay, TimeUnit.MILLISECONDS)
+
+        synchronized(reconnectMutex) {
+            val future = scheduler.schedule({
+                if (isServerActive && !connected && !connecting) {
+                    connect()
+                }
+            }, delay, TimeUnit.MILLISECONDS)
+            reconnectTimers.add(future)
+        }
+    }
+
+    private fun cancelAllReconnects() {
+        synchronized(reconnectMutex) {
+            reconnectTimers.forEach { it.cancel(false) }
+            reconnectTimers.clear()
+        }
     }
 
     private fun buildUrl(): String {
@@ -172,7 +225,7 @@ class TvController(private val context: Context) {
             val event = msg.optString("event", "")
             val data = msg.optJSONObject("data")
 
-            // Handle token (Issue B fix: save to SharedPreferences)
+            // Handle token (save to SharedPreferences)
             if (data != null && data.has("token")) {
                 val newToken = data.getString("token")
                 if (newToken.isNotEmpty()) {
@@ -199,7 +252,7 @@ class TvController(private val context: Context) {
         keepAliveFuture?.cancel(false)
         keepAliveMisses = 0
         keepAliveFuture = scheduler.scheduleAtFixedRate({
-            if (!connected) return@scheduleAtFixedRate
+            if (!connected || !isServerActive) return@scheduleAtFixedRate
             if (isTvReachable()) {
                 keepAliveMisses = 0
             } else {
@@ -233,7 +286,7 @@ class TvController(private val context: Context) {
     private fun wsSend(json: JSONObject): Boolean {
         val c = wsClient
         if (c == null || !connected) {
-            connect()
+            if (isServerActive) connect()
             return false
         }
         return try {
@@ -291,7 +344,7 @@ class TvController(private val context: Context) {
         }, HOLD_SAFETY_MS, TimeUnit.MILLISECONDS)
     }
 
-    // --- Text Input (Issue A fix: full 4-step IME sequence) ---
+    // --- Text Input (4-step IME sequence) ---
 
     fun sendText(text: String): Boolean {
         if (text.isEmpty()) return false
@@ -392,31 +445,66 @@ class TvController(private val context: Context) {
         // Schedule reconnection attempts after WoL
         reconnectDelay = 5000L
         for (delay in listOf(5L, 15L, 25L, 40L)) {
-            scheduler.schedule({ connect() }, delay, TimeUnit.SECONDS)
+            scheduler.schedule({ if (isServerActive) connect() }, delay, TimeUnit.SECONDS)
         }
     }
 
-    // --- Disconnect / Toggle ---
+    // --- Disconnect / Toggle / Reset ---
 
+    /**
+     * Cleanly disconnect from TV.
+     * Sets isServerActive = false so auto-reconnect is suppressed.
+     */
     fun disconnect() {
-        Log.d(TAG, "Disconnecting from TV")
+        Log.d(TAG, "Disconnecting from TV (user initiated)")
+        isServerActive = false
+
+        // Stop keep-alive
         keepAliveFuture?.cancel(false)
+        keepAliveFuture = null
+
+        // Cancel all pending reconnects
+        cancelAllReconnects()
+
+        // Cancel all held key timers
         heldTimers.values.forEach { it.cancel(false) }
         heldTimers.clear()
+
+        // Reset reconnect delay
         reconnectDelay = 5000L
-        val c = wsClient
-        wsClient = null
+
+        // Close WebSocket
         connected = false
         connecting = false
+        val c = wsClient
+        wsClient = null
         c?.close()
+
         statusCallback?.invoke(false)
     }
 
+    /**
+     * Force the server ON and connect.
+     */
+    fun serverOn() {
+        if (!isServerActive) {
+            isServerActive = true
+            connect()
+        }
+    }
+
+    /**
+     * Force the server OFF and disconnect.
+     */
+    fun serverOff() {
+        disconnect()
+    }
+
     fun toggleConnection(): Boolean {
-        if (connected) {
+        if (connected || connecting) {
             disconnect()
         } else {
-            connect()
+            serverOn()
         }
         return connected
     }
@@ -426,13 +514,24 @@ class TvController(private val context: Context) {
         return if (tvIp.isNotEmpty()) "$tvIp|$tvMac|${if (t.isNotEmpty()) t.substring(0, minOf(8, t.length)) + "..." else "(none)"}" else ""
     }
 
+    /**
+     * Full reset: disconnect, clear config, notify UI.
+     */
+    fun resetAndDisconnect() {
+        disconnect()
+        clearConfig()
+        cancelAllReconnects()
+    }
+
     // --- Cleanup ---
 
     fun destroy() {
         Log.d(TAG, "Destroying TvController")
+        isServerActive = false
         keepAliveFuture?.cancel(false)
         heldTimers.values.forEach { it.cancel(false) }
         heldTimers.clear()
+        cancelAllReconnects()
         connected = false
         connecting = false
         wsClient?.close()

@@ -2,6 +2,7 @@ package com.tvremote.app
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.content.Intent
 import android.os.Bundle
 import android.os.VibrationEffect
 import android.os.Vibrator
@@ -13,6 +14,7 @@ import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.view.WindowManager
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import kotlinx.coroutines.*
 import kotlinx.coroutines.runBlocking
@@ -26,6 +28,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var webView: WebView
     private lateinit var tvController: TvController
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
+    private var wasConnected = false
+    private var showingDisconnectDialog = false
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -54,7 +58,7 @@ class MainActivity : AppCompatActivity() {
                     super.onPageFinished(view, url)
                     // If already configured, connect automatically
                     if (tvController.tvIp.isNotEmpty()) {
-                        tvController.connect()
+                        tvController.serverOn()
                     }
                 }
             }
@@ -69,8 +73,63 @@ class MainActivity : AppCompatActivity() {
             scope.launch {
                 val js = "if(typeof onNativeStatus==='function') onNativeStatus($connected);"
                 webView.evaluateJavascript(js, null)
+
+                // Detect sudden disconnection while on remote page
+                if (wasConnected && !connected && tvController.isServerActive) {
+                    onConnectionLost()
+                }
+                wasConnected = connected
             }
         }
+
+        // Disconnect callback: show reset dialog
+        tvController.setDisconnectCallback {
+            scope.launch {
+                showDisconnectDialog()
+            }
+        }
+    }
+
+    /**
+     * Called when connection is lost unexpectedly while on remote page.
+     * Shows dialog with Reconnect / Reset options.
+     */
+    private fun onConnectionLost() {
+        if (showingDisconnectDialog) return
+        if (!tvController.isServerActive) return
+
+        showingDisconnectDialog = true
+        Log.d(TAG, "Connection lost, showing disconnect dialog")
+
+        scope.launch {
+            AlertDialog.Builder(this@MainActivity)
+                .setTitle("Koneksi Terputus")
+                .setMessage("Koneksi ke TV terputus. Apa yang ingin Anda lakukan?")
+                .setCancelable(false)
+                .setPositiveButton("Sambungkan Ulang") { dialog, _ ->
+                    dialog.dismiss()
+                    showingDisconnectDialog = false
+                    tvController.serverOn()
+                }
+                .setNegativeButton("Atur Ulang Konfigurasi") { dialog, _ ->
+                    dialog.dismiss()
+                    showingDisconnectDialog = false
+                    resetAndGoToSetup()
+                }
+                .setOnCancelListener {
+                    showingDisconnectDialog = false
+                }
+                .show()
+        }
+    }
+
+    /**
+     * Reset all config and redirect to setup screen.
+     */
+    private fun resetAndGoToSetup() {
+        tvController.resetAndDisconnect()
+        // Reload WebView to show setup screen
+        webView.loadUrl("file:///android_asset/index.html")
     }
 
     private fun notifyJs(js: String) {
@@ -153,7 +212,7 @@ class MainActivity : AppCompatActivity() {
 
         @JavascriptInterface
         fun reconnect() {
-            tvController.connect()
+            tvController.serverOn()
         }
 
         @JavascriptInterface
@@ -170,7 +229,6 @@ class MainActivity : AppCompatActivity() {
 
         @JavascriptInterface
         fun startScan(): String {
-            // Run scan synchronously (called from background thread by JS bridge)
             val result = runBlocking {
                 NetworkScanner.scan(applicationContext)
             }
@@ -184,15 +242,15 @@ class MainActivity : AppCompatActivity() {
 
         @JavascriptInterface
         fun connectToTv(): Boolean {
-            tvController.connect()
+            tvController.serverOn()
             return true
         }
 
         @JavascriptInterface
         fun forceReconnect() {
-            tvController.destroy()
+            tvController.disconnect()
             tvController.loadConfig()
-            tvController.connect()
+            tvController.serverOn()
         }
 
         // --- Power control ---
@@ -220,6 +278,17 @@ class MainActivity : AppCompatActivity() {
             runOnUiThread {
                 finishAffinity()
                 android.os.Process.killProcess(android.os.Process.myPid())
+            }
+        }
+
+        @JavascriptInterface
+        fun resetConfig() {
+            Log.d(TAG, "Reset config requested from JS")
+            tvController.resetAndDisconnect()
+            NetworkScanner.cancelScan()
+            // Redirect to setup screen
+            runOnUiThread {
+                webView.loadUrl("file:///android_asset/index.html")
             }
         }
     }
