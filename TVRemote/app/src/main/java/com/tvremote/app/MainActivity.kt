@@ -3,19 +3,26 @@ package com.tvremote.app
 import android.annotation.SuppressLint
 import android.content.Context
 import android.content.Intent
+import android.os.Build
 import android.os.Bundle
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
 import android.util.Log
+import android.view.View
+import android.view.WindowManager
 import android.webkit.JavascriptInterface
 import android.webkit.WebChromeClient
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
-import android.view.WindowManager
+import android.widget.FrameLayout
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.updatePadding
 import kotlinx.coroutines.*
 import kotlinx.coroutines.runBlocking
 
@@ -35,15 +42,19 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        // Enable edge-to-edge display
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+
         // Keep screen on while remote is active
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
 
         tvController = TvController(applicationContext)
         tvController.loadConfig()
 
-        webView = WebView(this).apply {
-            setContentView(this)
+        // Create a FrameLayout wrapper to handle insets
+        val rootLayout = FrameLayout(this)
 
+        webView = WebView(this).apply {
             settings.javaScriptEnabled = true
             settings.domStorageEnabled = true
             settings.allowFileAccess = true
@@ -64,6 +75,44 @@ class MainActivity : AppCompatActivity() {
             }
 
             addJavascriptInterface(JavascriptBridge(), "Android")
+        }
+
+        // Add WebView to the wrapper layout
+        rootLayout.addView(webView, FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.MATCH_PARENT,
+            FrameLayout.LayoutParams.MATCH_PARENT
+        ))
+
+        // Set the wrapper as content view
+        setContentView(rootLayout)
+
+        // Handle Window Insets for status bar and navigation bar
+        ViewCompat.setOnApplyWindowInsetsListener(rootLayout) { view, windowInsets ->
+            val insets = windowInsets.getInsets(WindowInsetsCompat.Type.systemBars())
+
+            // Apply padding for status bar (top) and navigation bar (bottom)
+            view.updatePadding(
+                left = insets.left,
+                top = insets.top,
+                right = insets.right,
+                bottom = insets.bottom
+            )
+
+            // Also inject the status bar height into JavaScript for the HTML UI
+            val statusBarHeight = insets.top
+            val navBarHeight = insets.bottom
+            val js = """
+                (function() {
+                    document.documentElement.style.setProperty('--status-bar-height', '${statusBarHeight}px');
+                    document.documentElement.style.setProperty('--nav-bar-height', '${navBarHeight}px');
+                    document.documentElement.style.paddingTop = '${statusBarHeight}px';
+                    document.body.style.paddingTop = '0px';
+                    document.body.style.height = 'calc(100dvh - ${statusBarHeight}px - ${navBarHeight}px)';
+                })();
+            """.trimIndent()
+            webView.evaluateJavascript(js, null)
+
+            WindowInsetsCompat.CONSUMED
         }
 
         webView.loadUrl("file:///android_asset/index.html")
